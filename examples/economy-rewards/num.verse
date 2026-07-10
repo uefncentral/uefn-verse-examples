@@ -1,0 +1,151 @@
+# Scientific Number Class
+# A custom number class that handles very large or small numbers using scientific notation with separate value and exponent components. It provides mathematical operations like addition, comparison, and
+# Difficulty: intermediate  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/num?ref=github
+
+using { /Verse.org/Simulation }
+
+num<public> := class<concrete><computes>():
+    @editable Value<public>:float = 0.0
+    @editable Exponent<public>:int = 0
+
+    IsZero<public>()<decides><computes>:void = Value = 0.0
+
+    Equals<public>(Other:num)<decides><computes>:void=
+        Value = Other.Value and Exponent = Other.Exponent
+
+    GreaterThanOrEqual<public>(Other:num)<decides><transacts>:void=
+        Normed := Self.Normalize()
+        OtherNormed := Other.Normalize()
+        Normed.Exponent > OtherNormed.Exponent or
+        (Normed.Exponent = OtherNormed.Exponent and Normed.Value >= OtherNormed.Value)
+
+    Normalize<public>()<transacts>:num=
+        if (IsZero[]). return num{}
+        if (1.0 < Value < 10.0). return Self
+
+        var NewExponent:int = Exponent
+        var NewValue:float = Abs(Value)
+
+        # If Value is less than 1, move decimal right
+        loop:
+            if (NewValue >= 1.0). break
+            set NewValue *= 10.0
+            set NewExponent -= 1
+
+        # If Value is greater than 10, move decimal left
+        loop:
+            if (NewValue < 10.0). break
+            set NewValue *= 0.1
+            set NewExponent += 1
+
+        SignedValue := if (Sgn(Value) < 0.0). -1.0 * NewValue else. NewValue
+        return num{ Value := SignedValue, Exponent := NewExponent }
+
+    SetNormalize<public>()<transacts>:num=
+        Num := Normalize()
+        var NewExponent:int = Num.Exponent
+        var NewValue:float = Num.Value
+
+        loop:
+            if (Mod[NewExponent, 3] = 0). break
+            set NewValue *= 10.0
+            set NewExponent -= 1
+
+        return num{ Value := NewValue, Exponent := NewExponent }
+
+    Add<public>(Other:num)<transacts>:num=
+        if (Other.IsZero[]). return Self
+
+        CommonExponent:int = Max(Exponent, Other.Exponent)
+
+        NewValue:float = (Value * Pow(10.0, (Exponent - CommonExponent) * 1.0)) +
+                         (Other.Value * Pow(10.0, (Other.Exponent - CommonExponent) * 1.0))
+
+        Result := num{ Value := NewValue, Exponent := CommonExponent }
+        return Result.Normalize()
+
+    Subtract<public>(Other:num)<transacts>:num=
+        CommonExponent:int = Max(Exponent, Other.Exponent)
+
+        NewValue:float = (Value * Pow(10.0, (Exponent - CommonExponent) * 1.0)) -
+                         (Other.Value * Pow(10.0, (Other.Exponent - CommonExponent) * 1.0))
+
+        Result := num{ Value := NewValue, Exponent := CommonExponent }
+        return Result.Normalize()
+
+    Multiply<public>(Other:int)<transacts>:num = Multiply(Other * 1.0)
+    Multiply<public>(Other:float)<transacts>:num=
+        if (Other = 1.0). return Self
+        Result := num{ Value := Value * Other, Exponent := Exponent }
+        return Result.Normalize()
+
+operator'+'<public>(LHS:num, RHS:num)<transacts>:num = LHS.Add(RHS)
+operator'-'<public>(LHS:num, RHS:num)<transacts>:num = LHS.Subtract(RHS)
+operator'*'<public>(LHS:num, RHS:int)<transacts>:num = LHS.Multiply(RHS)
+operator'*'<public>(LHS:int, RHS:num)<transacts>:num = RHS.Multiply(LHS)
+operator'*'<public>(LHS:num, RHS:float)<transacts>:num = LHS.Multiply(RHS)
+operator'*'<public>(LHS:float, RHS:num)<transacts>:num = RHS.Multiply(LHS)
+# operator'>='<public>(LHS:num, RHS:num):logic = LHS.GreaterThanOrEqual(RHS)
+
+AddNums(LHS:num, RHS:num):num = LHS.Add(RHS)
+(All:[]num).Sum<public>():num = All.Reduce(AddNums, num{})
+
+ToString<public>(Number:num):string=
+    if (Number.IsZero[]). return "0"
+    if (Number.Exponent < 0). return "0"
+
+    NumAsSet := Number.SetNormalize()
+    if (NumAsSet.Exponent < 3). return "{NumAsSet.Value.ToInt()}"
+
+    Length := if (NumAsSet.Value >= 100.0). 3 else. 4
+    Str:string = "{NumAsSet.Value}"
+
+    if:
+        Trimmed := Str.Remove[Length, Str.Length]
+        MajorIndex := Quotient[NumAsSet.Exponent, 18]
+        Major := MajorSuffixes[MajorIndex](0)
+        MinorIndex := Quotient[NumAsSet.Exponent - (MajorIndex * 18), 3]
+        Minor := MinorSuffixes[MinorIndex](0)
+    then:
+        return Trimmed + Major + Minor
+
+    return Str
+
+MinorSuffixes:[]tuple(string, string) = array:
+    ("", ""),
+    ("k", "Thousand"),
+    ("m", "Million"),
+    ("b", "Billion"),
+    ("t", "Trillion"),
+    ("q", "Quadrillion")
+
+MajorSuffixes:[]tuple(string, string) = array:
+    ("", ""),
+    ("A", "Alpha"),
+    ("B", "Bravo"),
+    ("C", "Charlie"),
+    ("D", "Delta"),
+    ("E", "Echo"),
+    ("F", "Foxtrot"),
+    ("G", "Golf"),
+    ("H", "Hotel"),
+    ("I", "India"),
+    ("J", "Juliett"),
+    ("K", "Kilo"),
+    ("L", "Lima"),
+    ("M", "Mike"),
+    ("N", "November"),
+    ("O", "Oscar"),
+    ("P", "Papa"),
+    ("Q", "Quebec"),
+    ("R", "Romeo"),
+    ("S", "Sierra"),
+    ("T", "Tango"),
+    ("U", "Uniform"),
+    ("V", "Victor"),
+    ("W", "Whiskey"),
+    ("X", "X-Ray"),
+    ("Y", "Yankee"),
+    ("Z", "Zulu")

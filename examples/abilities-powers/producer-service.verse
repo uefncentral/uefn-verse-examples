@@ -1,0 +1,145 @@
+# Producer Purchase System
+# Implements a game economy system where players can buy producers that generate resources. The code handles purchase validation, cost checking, prerequisite requirements, and updates player inventories
+# Difficulty: advanced  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/producer-service?ref=github
+
+using { Tableau }
+using { TableauParticipant }
+
+Ev_ProdPurchased<constructor>(Type:entity, ID:int) := domain_event:
+    Entity := Type
+    EntityID := ID
+    Event := ev_producer_purchased{}
+
+prod_int_lens := type{_(:producer):[]int}
+prod_num_lens := type{_(:producer):[]num}
+
+producer_service<public> := class(service):
+    Repo<public>:producer_repository
+    ParticipantRepo<public>:participant_repository
+    EffectProvider<public>:effect_provider
+
+    Buy<public>(ProducerID:int, BuyerID:int):[]domain_event=
+        var DomainEvents:[]domain_event = array{}
+        if:
+            Prod := Repo.GetByID[ProducerID]
+        then:
+            All := Repo.GetAllMapped()
+
+            # Required Producers
+            if (not HasRequiredProducers[All, Prod, BuyerID]). return DomainEvents
+
+            if (Cost := Prod.GetCost[BuyerID]):
+                if:
+                    Buyer := ParticipantRepo.GetByID[BuyerID]
+                    CanAfford[Buyer, Cost]
+                then:
+                    # TODO: Move Repo update to actual domain event generation
+                    if (NewParticipant := Buyer.RemoveResources[Cost.Type, Cost.Amount]):
+                        if (ParticipantRepo.Update[NewParticipant]) {}
+                else:
+                    return DomainEvents
+
+            if (NewProducer := Prod.IncreaseCount[BuyerID]):
+                if (Repo.Update[NewProducer]):
+                    set DomainEvents += array:
+                        Ev_ProdPurchased(entity_producer{}, Prod.ID)
+                        Ev_ProdPurchased(entity_participant{}, BuyerID)
+
+        return DomainEvents
+
+    #
+    # EXPERIMENTAL
+    #
+    Produce<public>(ProducerID:int, ParticipantID:int):[]domain_event=
+        var DomainEvents:[]domain_event = array{}
+
+        if:
+            Prod := Repo.GetByID[ProducerID]
+            Abilities := Prod.Abilities
+        then:
+            for(Ability:Abilities):
+                var LastCommandModification:command = ProducerAbilityToCommand(Ability, Prod, ParticipantID)
+                for (Effect:LastCommandModification.AfterEffects):
+                    set LastCommandModification = Effect.Play(LastCommandModification)
+
+        return DomainEvents
+
+
+    Lens_ProducerID(Prod:producer):[]int = array. Prod.ID
+    Lens_ProducerResourceID(Prod:producer):[]int = if (ResID := Prod.ResourceID?). array. ResID else. array {}
+    # TODO: Add as producer domain object function
+    Lens_ProducerAllOwners(Prod:producer):[]int = for(Owner->Count : Prod.Counts). Owner
+
+    ProducerAbilityToCommand<public>(Ability:producer_ability, Prod:producer, ParticipantID:int):command=
+        IntLenses:[producer_int_lenses]prod_int_lens = map:
+            producer_int_lenses.ID => Lens_ProducerID
+            producer_int_lenses.ResourceID => Lens_ProducerResourceID
+            producer_int_lenses.AllOwners => Lens_ProducerAllOwners
+            producer_int_lenses.Target => lens_ProducerTarget{ Target := ParticipantID }.Lens
+        NumLenses:[producer_num_lenses]prod_num_lens = map:
+            producer_num_lenses.ProductionAmount => lens_ProductionAmount{ Target := ParticipantID }.Lens
+
+        return if:
+            SubjectLens := IntLenses[Ability.Subjects]
+            TargetLens := IntLenses[Ability.Targets]
+            MagnitudeLens := NumLenses[Ability.Magnitudes]
+        then:
+            command:
+                Subjects := SubjectLens(Prod)
+                Targets := TargetLens(Prod)
+                Magnitudes := MagnitudeLens(Prod)
+                AfterEffects := for(Eff:Ability.AfterEffects, Effect := EffectProvider.Get[Eff]). Effect
+        else:
+            command{}
+
+lens_ProducerTarget := class():
+    Target:int
+    Lens(Prod:producer):[]int = array. Target
+
+lens_ProductionAmount := class():
+    Target:int
+    Lens(Prod:producer):[]num = array. Prod.GetProductionAmount(Target)
+
+
+HasRequiredProducers<public>(All:[int]producer, Prod:producer, ParticipantID:int)<decides><transacts>:void=
+    Reqs := Prod.Required? or array{}
+    Owned := for (ReqID:Reqs, Required := All[ReqID], Required.OwnedBy[ParticipantID]). Required
+    Owned.Length >= Reqs.Length
+
+producer_vfx_state<public> := enum:
+    NotInitialized
+    NotAvailable
+    AvailableAndFree
+    AvailableNotAffordable
+    AvailableAndAffordable
+    Bought
+    Maxed
+
+ToString<public>(State:producer_vfx_state):string=
+    case(State):
+        producer_vfx_state.NotInitialized => "Not Initialized"
+        producer_vfx_state.NotAvailable => "Not Available"
+        producer_vfx_state.AvailableAndFree => "Available And Free"
+        producer_vfx_state.AvailableNotAffordable => "Available Not Affordable"
+        producer_vfx_state.AvailableAndAffordable => "Available And Affordable"
+        producer_vfx_state.Bought => "Bought"
+        producer_vfx_state.Maxed => "Maxed"
+
+WhichVFXState<public>(All:[int]producer, Prod:producer, Part:participant, OldCount:int)<transacts>:producer_vfx_state=
+    Count := Prod.GetCount(Part.ID)
+    if (Count > OldCount). return producer_vfx_state.Bought
+    if (Prod.IsMaxed[Part.ID]). return producer_vfx_state.Maxed
+    if (not HasRequiredProducers[All, Prod, Part.ID]). return producer_vfx_state.NotAvailable
+    if (not Prod.HasCost[] and HasRequiredProducers[All, Prod, Part.ID]). return producer_vfx_state.AvailableAndFree
+    if (Cost := Prod.GetCost[Part.ID]):
+        if (Count = 0 and Prod.FirstIsFree). return producer_vfx_state.AvailableAndFree
+        if (not CanAfford[Part, Cost]). return producer_vfx_state.AvailableNotAffordable
+        if (CanAfford[Part, Cost]). return producer_vfx_state.AvailableAndAffordable
+    return producer_vfx_state.NotAvailable
+
+# TODO: Add tests for all the SHOULDs below
+CanAfford<public>(Participant:participant, Cost:cost)<decides><transacts>:void=
+    Amount := Participant.GetResource(Cost.Type)
+    Amount.GreaterThanOrEqual[Cost.Amount]

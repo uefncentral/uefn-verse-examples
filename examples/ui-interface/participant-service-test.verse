@@ -1,0 +1,62 @@
+# Participant Resource Test Suite
+# Unit test suite that validates a participant service's ability to add resources to single and multiple participants. Tests verify that the correct domain events are generated when resources are added 
+# Difficulty: intermediate  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/participant-service-test?ref=github
+
+
+using { /Fortnite.com/Devices }
+using { /Verse.org/Simulation }
+
+using { Tableau }
+using { TableauTesting }
+using { TableauProducer }
+
+participant_service_test := class(creative_device, test_suite):
+    GetName<override>():string = "Participant Service"
+    GetTests<override>():[]test_case = array:
+        test_case:
+            Name := "Should add resources to a participant"
+            Test := AddResources
+        test_case:
+            Name := "Should add resources for multiple participants"
+            Test := AddResourcesForMultiple
+
+    AddResources():?failure =
+        # Arrange
+        ResourceID := 26
+        Participant := participant{ ID := 13 }
+        Repo := participant_repository. Initial := array. Participant
+        Service := participant_service{ Repo := Repo }
+        Ev1 := Ev_ResourcesGained(13)
+
+        # Act
+        Events := Service.AddResources(13, ResourceID, num. Value := 1.0)
+
+        # Assert
+        if(not Events.Length = 1). return fail("Not the right number of Domain Events")
+        if(not Events.Includes[Ev1]). return fail("No resources gained for participant")
+
+        # Pass
+        return false
+
+    AddResourcesForMultiple():?failure =
+        # Arrange
+        ResourceID := 26
+        Participant := participant{ ID := 13 }
+        Participant2 := participant{ ID := 14 }
+        Repo := participant_repository. Initial := array{ Participant, Participant2 }
+        Service := participant_service{ Repo := Repo }
+        Ev1 := Ev_ResourcesGained(13)
+        Ev2 := Ev_ResourcesGained(14)
+
+        # Act
+        Events := Service.AddResources(array{ 13, 14 }, ResourceID, num. Value := 1.0)
+
+        # Assert
+        if(not Events.Length = 2). return fail("Not the right number of Domain Events")
+        if(not Events.Includes[Ev1]). return fail("No resources gained for participant 1")
+        if(not Events.Includes[Ev2]). return fail("No resources gained for participant 2")
+
+        # Pass
+        return false

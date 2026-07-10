@@ -1,0 +1,76 @@
+# Resource Counter UI
+# Displays a player's resource count in real-time on screen using a customizable UI widget. The device tracks a specific resource by ID and updates the display showing the resource name and current amou
+# Difficulty: advanced  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/resource-ui-device?ref=github
+
+
+using { /Fortnite.com/UI }
+using { /Fortnite.com/Devices }
+using { /Verse.org/Simulation }
+using { /Verse.org/Simulation/Tags }
+using { /Verse.org/Colors/NamedColors }
+using { /UnrealEngine.com/Temporary/UI }
+using { /UnrealEngine.com/Temporary/SpatialMath }
+
+using { Tableau }
+using { TableauAgent }
+using { TableauResource }
+
+res_vm<public> := class():
+    ResourceText<public>:gooey_message = gooey_message{}
+
+resource_ui_tag := class(tag){}
+resource_ui_device<public> := class(creative_device, updatable):
+    @editable ResourceID:int = 0
+    @editable MinimumAnchor:vector2 = vector2{X:=0.025,Y:=0.75}
+    @editable MaximumAnchor:vector2 = vector2{X:=0.025,Y:=0.75}
+    var CurrentAgent:?agent = false
+    var AgentRepository:?agent_repository = false
+    var ResourceRepository:?resource_repository = false
+    var ParticipantRepository:?participant_repository = false
+    VM:res_vm = res_vm{}
+
+    # Messages
+    Resources<localizes><private>(Resource:string, Count:string):message := "{Resource}: {Count}"
+
+    Subscriptions<override>()<transacts>:[]event_subscription = array:
+        event_subscription:
+            Entity := entity_participant{}
+    ClearState<override>():void= {}
+    Update<override>()<suspends>:void=
+        if:
+            Agent := CurrentAgent?
+            Resource := ResourceRepository?.GetByID[ResourceID]
+        then:
+            Amount := if:
+                ParticipantID := AgentRepository?.GetParticipant[Agent]?
+                Participant := ParticipantRepository?.GetByID[ParticipantID]
+            then:
+                Participant.GetResource(ResourceID)
+            else:
+                num{}
+
+            VM.ResourceText.Set(Resources(Resource.Name, "{Amount}"))
+
+    Initialize<public>(
+        AgentRepo:agent_repository,
+        ResourceRepo:resource_repository,
+        ParticipantRepo:participant_repository
+    )<suspends>:void=
+        if (Agent := GetPlayspace().GetPlayers()[0]):
+            set CurrentAgent = option. Agent
+            AddUI(Agent)
+
+        set AgentRepository = option. AgentRepo
+        set ResourceRepository = option. ResourceRepo
+        set ParticipantRepository = option. ParticipantRepo
+
+    AddUI(Agent:agent):void =
+        ResourceUI:resource_ui = resource_ui. VM := VM.ResourceText
+        if (Player := player[Agent]). ResourceUI.AddForPlayer(Player)
+
+LoadResourceUIDevices<public>():[]resource_ui_device=
+    TaggedDevices := GetCreativeObjectsWithTag(resource_ui_tag{})
+    for(Index -> Tagged : TaggedDevices, Device := resource_ui_device[Tagged]). Device
+

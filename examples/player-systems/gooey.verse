@@ -1,0 +1,81 @@
+# Reactive State Manager
+# Implements a reactive programming system for managing and synchronizing state changes across different data types. The 'gooey' class provides event-driven state management with automatic updates, whil
+# Difficulty: advanced  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/gooey?ref=github
+
+using { /Verse.org/Simulation }
+
+gooey<public>(t:type) := class:
+    Init<public>(Default:t)<suspends>:void =
+        var Value:t = Default
+        sync:
+            loop:
+                GetEvent.Await()
+                Updated.Signal(Value)
+            loop:
+                set Value = Updated.Await()
+
+
+    Updated:event(t) = event(t){}
+    UpdatedEvent<public>():event(t) = Updated
+    Set<public>(NewValue:t):void = Updated.Signal(NewValue)
+
+    GetEvent:event() = event(){}
+    Get<public>()<suspends>:t =
+        race:
+            ReturnValue := Updated.Await()
+            block:
+                GetEvent.Signal()
+                Sleep(Inf)
+        return ReturnValue
+
+Computed<public>(VM1:gooey(t), VM2:gooey(u), Transform:type{_(:t, :u):v} where t:type, u:type, v:type):gooey(v)=
+    ResultVM:gooey(v) = gooey(v){}
+    spawn. Combine(VM1, VM2, Transform, ResultVM)
+    return ResultVM
+
+Combine<public>(VM1:gooey(t), VM2:gooey(u), Transform:type{_(:t, :u):v}, ResultVM:gooey(v) where t:type, u:type, v:type)<suspends>:void=
+    var First:t = VM1.Get()
+    var Second:u = VM2.Get()
+
+    sync:
+        ResultVM.Init(Transform(First, Second))
+        loop:
+            NewPair := race:
+                block:
+                    set First = VM1.UpdatedEvent().Await()
+                    (First, Second)
+                block:
+                    set Second = VM2.UpdatedEvent().Await()
+                    (First, Second)
+            Transformed := Transform(NewPair)
+            ResultVM.Set(Transformed)
+
+gooey_message<public> := class(gooey(message)):
+    VM<public>:gooey(message) = gooey(message){}
+    Init<override>(Default:message)<suspends>:void = VM.Init(Default)
+    Set<override>(NewValue:message):void = VM.Set(NewValue)
+    Get<override>()<suspends>:message = VM.Get()
+    UpdatedEvent<override>():event(message) = VM.Updated
+
+gooey_string<public> := class(gooey(string)):
+    VM<public>:gooey(string) = gooey(string){}
+    Init<override>(Default:string)<suspends>:void = VM.Init(Default)
+    Set<override>(NewValue:string):void = VM.Set(NewValue)
+    Get<override>()<suspends>:string = VM.Get()
+    UpdatedEvent<override>():event(string) = VM.Updated
+
+gooey_int<public> := class(gooey(int)):
+    VM<public>:gooey(int) = gooey(int){}
+    Init<override>(Default:int)<suspends>:void = VM.Init(Default)
+    Set<override>(NewValue:int):void = VM.Set(NewValue)
+    Get<override>()<suspends>:int = VM.Get()
+    UpdatedEvent<override>():event(int) = VM.Updated
+
+gooey_agent<public> := class(gooey(?agent)):
+    VM<public>:gooey(?agent) = gooey(?agent){}
+    Init<override>(Default:?agent)<suspends>:void = VM.Init(Default)
+    Set<override>(NewValue:?agent):void = VM.Set(NewValue)
+    Get<override>()<suspends>:?agent = VM.Get()
+    UpdatedEvent<override>():event(?agent) = VM.Updated

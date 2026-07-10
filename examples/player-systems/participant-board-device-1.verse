@@ -1,0 +1,65 @@
+# Participant Resource Display Board
+# Creates a dynamic billboard that displays a participant's game statistics including their ID, number of producers owned, and current resource counts. The board automatically updates when the participa
+# Difficulty: advanced  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/participant-board-device-1?ref=github
+
+
+using { /Fortnite.com/Devices }
+using { /Verse.org/Simulation }
+using { /UnrealEngine.com/Temporary/Diagnostics }
+using { /Verse.org/Simulation/Tags }
+
+using { Tableau }
+using { TableauAgent }
+using { TableauResource }
+using { TableauProducer }
+
+participant_board_tag := class(tag){}
+participant_board_device<public> := class(creative_device, updatable):
+
+    # Entity State Management
+    @editable ParticipantID:int = 0
+    var ResourceRepository:?resource_repository = false
+    var ProducerRepository:?producer_repository = false
+    var ParticipantRepository:?participant_repository = false
+
+    # Device Properties
+    @editable Board:billboard_device = billboard_device{}
+
+    # Messages
+    ParticipantLabel<localizes><private>(ID:int):message := "Participant ID: {ID}"
+    ProducerCount<localizes><private>(Count:int):message := "Producers: {Count}"
+    ResourceCount<localizes><private>(Resource:string, Count:string):message := "{Resource}: {Count}"
+
+    Subscriptions<override>()<transacts>:[]event_subscription = array:
+        event_subscription:
+            Entity := entity_participant{}
+            EntityID := option. ParticipantID
+    ClearState<override>():void= {}
+    Update<override>()<suspends>:void=
+        if:
+            ProdRepo := ProducerRepository?
+            Participant := ParticipantRepository?.GetByID[ParticipantID]
+            Resources := Participant.Resources
+        then:
+            Producers := ProdRepo.GetOwnedProducers(ParticipantID)
+            var Text:message = ParticipantLabel(ParticipantID) + NL()
+            set Text = Text + ProducerCount(Producers.Length) + NL()
+            for (ResourceID->Count:Resources, Resource := ResourceRepository?.GetByID[ResourceID]):
+                set Text = Text + ResourceCount(Resource.Name, "{Count}") + NL()
+            Board.SetText(Text)
+
+    Initialize<public>(
+        ResourceRepo:resource_repository,
+        ProducerRepo:producer_repository,
+        ParticipantRepo:participant_repository
+    )<suspends>:void=
+        set ResourceRepository = option. ResourceRepo
+        set ProducerRepository = option. ProducerRepo
+        set ParticipantRepository = option. ParticipantRepo
+        spawn. FreshUpdate()
+
+LoadParticipantBoardDevices<public>():[]participant_board_device=
+    TaggedDevices := GetCreativeObjectsWithTag(participant_board_tag{})
+    for(Index -> Tagged : TaggedDevices, Device := participant_board_device[Tagged]). Device

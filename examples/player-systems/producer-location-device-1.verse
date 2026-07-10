@@ -1,0 +1,228 @@
+# Producer Location Manager
+# Manages interactive producer locations in UEFN with visual effects, proximity detection, and state management. Handles buying, producing, and visual feedback through particle effects, lighting, and UI
+# Difficulty: advanced  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/producer-location-device-1?ref=github
+
+
+using { /Verse.org/Assets }
+using { /Fortnite.com/Devices }
+using { /Verse.org/Simulation }
+using { /Fortnite.com/Characters }
+using { /UnrealEngine.com/Assets }
+using { /Verse.org/Simulation/Tags }
+using { /Fortnite.com/Devices/CreativeAnimation }
+using { /UnrealEngine.com/Temporary/SpatialMath }
+using { /UnrealEngine.com/Temporary/Diagnostics }
+using { /Fortnite.com/Devices/CreativeAnimation/InterpolationTypes }
+
+using { Tableau }
+using { TableauAgent }
+using { TableauProducer }
+using { TableauParticipant }
+
+producer_location_tag := class(tag){}
+producer_location_device<public> := class(creative_device, updatable):
+
+    # Entity State Management
+    @editable ProducerID<public>:int = 0
+    @editable OwnerID<public>:int = 0
+
+    # Dependencies
+    var ProducerRepository:?producer_repository = false
+    var ParticipantRepository:?participant_repository = false
+    var AgentRepository:?agent_repository = false
+    var BuyEffect:?effect = false
+    var ProduceEffect:?effect = false
+
+    # Local State Management
+    var CurrentState:producer_vfx_state = producer_vfx_state.NotInitialized
+    var CurrentCount:int = -1
+    Bought:event() = event(){}
+    Produce:event() = event(){}
+    Clear:event() = event(){}
+    InProximity:event(agent) = event(agent){}
+
+    # VFX
+    @editable CannotBuyZoneVFX:?particle_system = false
+    @editable BuyZoneVFX:?particle_system = false
+    @editable BuyLabelVFX:?particle_system = false
+    @editable ClaimLabelVFX:?particle_system = false
+    @editable BuildVFX:?particle_system = false
+
+    # Device Properties
+    @editable ShowProps:[]creative_prop = array{}
+    @editable HideProps:[]creative_prop = array{}
+    @editable Light:customizable_light_device = customizable_light_device{}
+    @editable CostBoard:billboard_device = billboard_device{}
+
+    Subscriptions<override>()<transacts>:[]event_subscription = array:
+        event_subscription:
+            Entity := entity_producer{}
+            EntityID := option. ProducerID
+        event_subscription:
+            Entity := entity_participant{}
+            EntityID := option. OwnerID
+    ClearState<override>():void={}
+    Update<override>()<suspends>:void=
+        if:
+            Repo := ProducerRepository?
+            Prod := Repo.GetByID[ProducerID]
+            Part := ParticipantRepository?.GetByID[OwnerID]
+        then:
+            if (Cost := Prod.GetCost[Part.ID]):
+                CostBoard.SetText(Str2Msg("Count: {Prod.GetCount(Part.ID)}\nCost: {Cost.Amount}"))
+            NewState := WhichVFXState(Repo.GetAllMapped(), Prod, Part, CurrentCount)
+            if (NewState = CurrentState). return
+
+            Clear.Signal()
+            UpdateVFX(NewState)
+            set CurrentState = NewState
+
+    UpdateVFX(State:producer_vfx_state)<suspends>:void=
+        case(State):
+            producer_vfx_state.AvailableAndFree =>
+                Light.TurnOn()
+                spawn. TrackProximity()
+                if (VFX := BuyZoneVFX?). spawn. StartVFX(VFX)
+            producer_vfx_state.AvailableNotAffordable =>
+                Light.TurnOn()
+                if (VFX := CannotBuyZoneVFX?). spawn. StartVFX(VFX)
+            producer_vfx_state.AvailableAndAffordable =>
+                Light.TurnOn()
+                spawn. TrackProximity()
+                if (VFX := BuyZoneVFX?). spawn. StartVFX(VFX)
+                if (VFX := BuyLabelVFX?). spawn. StartVFX(VFX)
+            producer_vfx_state.Bought =>
+                UpdateProps()
+            producer_vfx_state.Maxed =>
+                Light.TurnOn()
+            _ =>
+                UnShowProps()
+                Light.TurnOff()
+
+    UpdateProps()<suspends>:void=
+        if:
+            Repo := ProducerRepository?
+            Prod := Repo.GetByID[ProducerID]
+        then:
+            NewCount := Prod.GetCount(OwnerID)
+            if (NewCount = CurrentCount). return
+
+            for (Count := CurrentCount..NewCount-1):
+                if (Count + 1 = 0):
+                    UnShowProps()
+                if (Prop := ShowProps[Count]):
+                    Bought.Signal()
+                    AnimateProps(array. Prop)
+                if (Prop := HideProps[Count]):
+                    Prop.Hide()
+
+            set CurrentCount = NewCount
+
+    MakePropsVisible(Props:[]creative_prop)<suspends>:void = for(Prop:Props). Prop.Show()
+    UnShowProps()<suspends>:void = for(Prop:ShowProps). Prop.Hide()
+    AnimateProps(Props:[]creative_prop)<suspends>:void =
+        StartKeyFrame:keyframe_delta = keyframe_delta:
+            DeltaLocation := vector3 { X:=1.0, Y:=1.0, Z:=-100.0 }
+            DeltaRotation := MakeRotationFromYawPitchRollDegrees(180.0, 0.0, 0.0)
+            DeltaScale := vector3 { X:=0.1, Y:=0.1, Z:=0.1 }
+            Time := 0.0
+        MovementKeyFrame: keyframe_delta = keyframe_delta:
+            DeltaLocation := vector3 { X:=1.0, Y:=1.0, Z:=100.0 }
+            DeltaRotation := MakeRotationFromYawPitchRollDegrees(-180.0, 0.0, 0.0)
+            DeltaScale := vector3 { X:=10.0, Y:=10.0, Z:=10.0 }
+            Time := 0.5
+            Interpolation := EaseOut
+        SquishDown: keyframe_delta = keyframe_delta:
+            DeltaLocation := vector3 { X:=1.0, Y:=1.0, Z:=1.0 }
+            DeltaRotation := IdentityRotation()
+            DeltaScale := vector3 { X:=0.66, Y:=0.66, Z:=0.66 }
+            Time := 0.1
+            Interpolation := EaseIn
+        SquishBack: keyframe_delta = keyframe_delta:
+            DeltaLocation := vector3 { X:=1.0, Y:=1.0, Z:=1.0 }
+            DeltaRotation := IdentityRotation()
+            DeltaScale := vector3 { X:=1.5, Y:=1.5, Z:=1.5 }
+            Time := 0.1
+            Interpolation := EaseOut
+
+        for(Prop:Props):
+            if (AController := Prop.GetAnimationController[]):
+                FortVaderKeyFrames:[]keyframe_delta = array { StartKeyFrame, MovementKeyFrame, SquishDown, SquishBack }
+                AController.SetAnimation(FortVaderKeyFrames, ?Mode:=animation_mode.OneShot)
+                AController.Play()
+        Sleep(0.01)
+        MakePropsVisible(Props)
+        if (FirstProp := Props[0], VFX := BuildVFX?). SpawnParticleSystem(VFX, FirstProp.GetTransform().Translation)
+
+    StartVFX(VFX:particle_system)<suspends>:void=
+        Cancelable:cancelable = SpawnParticleSystem(VFX, GetTransform().Translation)
+        Clear.Await()
+        Cancelable.Cancel()
+
+    TrackProximity()<suspends>:void=
+        race:
+            Bought.Await()
+            loop:
+                if (Agent := AgentRepository?.GetAgent[OwnerID]?, Char := Agent.GetFortCharacter[]):
+                    Position := Char.GetTransform().Translation
+                    Proximity := Distance(Position, GetTransform().Translation)
+                    if (Proximity < 150.0). InProximity.Signal(Agent)
+                Sleep(0.1)
+
+    Command_Buy()<suspends>:void=
+        Agent := InProximity.Await()
+        if (Effect := BuyEffect?):
+            Effect.Play(
+                command:
+                    Subjects := array. ProducerID
+                    Targets := array. OwnerID
+            )
+
+    Command_Produce()<suspends>:void=
+        Produce.Await()
+        if (Effect := ProduceEffect?):
+            Effect.Play(
+                command:
+                    Subjects := array. ProducerID
+                    Targets := array. OwnerID
+            )
+
+    Initialize<public>(
+        ProducerRepo:producer_repository,
+        ParticipantRepo:participant_repository,
+        AgentRepo:agent_repository,
+        NewBuyEffect:buy_producer_effect,
+        NewProduceEffect:produce_effect
+    )<suspends>:void=
+        set ProducerRepository = option. ProducerRepo
+        set ParticipantRepository = option. ParticipantRepo
+        set AgentRepository = option. AgentRepo
+        set BuyEffect = option. NewBuyEffect
+        set ProduceEffect = option. NewProduceEffect
+        UpdateVFX(CurrentState)
+        spawn. FreshUpdate()
+        spawn. ProduceTimer()
+
+        # Events to Commands
+        loop:
+            race:
+                Command_Buy()
+                Command_Produce()
+
+    ProduceTimer()<suspends>:void=
+        Bought.Await()
+        loop:
+            if (Producer := ProducerRepository?.GetByID[ProducerID]):
+                Rate := Producer.GetRate(OwnerID)
+                Sleep(Rate)
+                Produce.Signal()
+
+    OnEnd<override>():void=
+        Bought.Signal()
+        Clear.Signal()
+
+LoadProducerLocationDevices<public>():[]producer_location_device=
+    TaggedDevices := GetCreativeObjectsWithTag(producer_location_tag{})
+    for(Index -> Tagged : TaggedDevices, Device := producer_location_device[Tagged]). Device

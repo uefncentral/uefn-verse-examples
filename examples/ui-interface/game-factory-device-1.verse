@@ -1,0 +1,158 @@
+# Game Factory Manager
+# This code creates a factory/production management system that handles resources, producers, and participants in a game. It loads various UI devices and game components, then registers effects for addi
+# Difficulty: intermediate  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/game-factory-device-1?ref=github
+
+
+using { /Fortnite.com/Devices }
+using { /Verse.org/Simulation }
+using { /Verse.org/Simulation/Tags }
+using { /UnrealEngine.com/Temporary/Diagnostics }
+
+using { TableauWork }
+using { TableauAgent }
+using { TableauResource }
+using { TableauProducer }
+using { TableauParticipant }
+
+game_factory_device := class(creative_device):
+    @editable Enabled:logic = true
+
+    OnBegin<override>()<suspends>:void=
+        if (not Enabled?). return
+
+        # Load all Devices
+        ResourceDevices := LoadResourceDevices()
+        ProducerDevices := LoadProducerDevices()
+        ProducerLocationDevices := LoadProducerLocationDevices()
+        ProducerPosUiDevices := LoadProducerPosUiDevices()
+        PossessionDevices:= LoadPossessionDevices()
+        ParticipantUIDevices := LoadParticipantUIDevices()
+        ResourceUIDevices := LoadResourceUIDevices()
+        ParticipantBoardDevices := LoadParticipantBoardDevices()
+        WorkDevices := LoadWorkDevices()
+        Print("Resource Devices: {ResourceDevices.Length}")
+        Print("Producer Devices: {ProducerDevices.Length}")
+        Print("Producer Location Devices: {ProducerLocationDevices.Length}")
+        Print("Producer POS UI Devices: {ProducerPosUiDevices.Length}")
+        Print("Possession Devices: {PossessionDevices.Length}")
+        Print("Participant UI Devices: {ParticipantUIDevices.Length}")
+        Print("Resource UI Devices: {ResourceUIDevices.Length}")
+        Print("Participant Board Devices: {ParticipantBoardDevices.Length}")
+        Print("Work Devices: {WorkDevices.Length}")
+
+        GrantResourcesEffect := grant_resources_effect{}
+        BuyProducerEffect := buy_producer_effect{}
+        ProduceEffect := produce_effect{}
+        EffectProvider := effect_provider{}
+        EffectProvider.Register(effect_type.AddResources, GrantResourcesEffect)
+        EffectProvider.Register(effect_type.BuyProducer, BuyProducerEffect)
+        EffectProvider.Register(effect_type.Produce, ProduceEffect)
+
+        # Setup all Repositories
+        AgentRepository:agent_repository = agent_repository{}
+
+        InitialProducers := for(Prod:ProducerDevices). Prod.InitialState
+        ProducerRepository:producer_repository = producer_repository:
+            Initial := InitialProducers
+
+        ParticipantRepository:participant_repository = participant_repository:
+            Initial := array:
+                participant{ID := 1}
+                participant{ID := 2}
+                participant{ID := 3}
+                participant{ID := 4}
+
+        InitialResources := for(Res:ResourceDevices). Res.InitialState
+        ResourceRepository:resource_repository = resource_repository:
+            Initial := InitialResources
+
+        InitialWork := for(Work:WorkDevices). Work.InitialState
+        WorkRepository:work_repository = work_repository:
+            Initial := InitialWork
+
+        # Setup all Services
+        ProducerService:producer_service = producer_service:
+            Repo := ProducerRepository
+            ParticipantRepo := ParticipantRepository
+            EffectProvider := EffectProvider
+        AgentService:agent_service = agent_service:
+            Repo := AgentRepository
+        ParticipantService:participant_service = participant_service:
+            Repo := ParticipantRepository
+        WorkService:work_service= work_service:
+            Repo := WorkRepository
+
+        Services:[]service = array:
+            ProducerService
+            AgentService
+            ParticipantService
+            WorkService
+
+        Dispatcher := dispatcher{}
+
+        # Setup all Controllers
+        ProducerController:producer_controller = producer_controller:
+            Dispatcher := Dispatcher
+            ProducerService := ProducerService
+            BuyEffect := BuyProducerEffect
+            ProduceEffect := ProduceEffect
+        AgentController:agent_controller = agent_controller:
+            Dispatcher := Dispatcher
+            AgentService := AgentService
+            Devices := PossessionDevices
+        ParticipantController:participant_controller = participant_controller:
+            Dispatcher := Dispatcher
+            ParticipantService := ParticipantService
+            Effect := GrantResourcesEffect
+        WorkController:work_controller = work_controller:
+            Dispatcher := Dispatcher
+            Service := WorkService
+            Devices := WorkDevices
+
+        Controllers:[]controller = array:
+            ProducerController
+            AgentController
+            ParticipantController
+            WorkController
+
+        # Setup all Devices
+        var Updatables:[]updatable := array{}
+        for(Device:ProducerLocationDevices):
+            spawn. Device.Initialize(ProducerRepository, ParticipantRepository, AgentRepository, BuyProducerEffect, ProduceEffect)
+            set Updatables += array. Device
+        for(Device:ProducerPosUiDevices):
+            spawn. Device.Initialize(ProducerRepository, ParticipantRepository, AgentRepository, BuyProducerEffect, ProduceEffect)
+            set Updatables += array. Device
+        for(Device:PossessionDevices):
+            spawn. Device.Initialize(AgentRepository)
+            set Updatables += array. Device
+        for(Device:ParticipantUIDevices):
+            spawn. Device.Initialize(ProducerRepository, AgentRepository)
+            set Updatables += array. Device
+        for(Device:ResourceUIDevices):
+            spawn. Device.Initialize(AgentRepository, ResourceRepository, ParticipantRepository)
+            set Updatables += array. Device
+        for(Device:ParticipantBoardDevices):
+            spawn. Device.Initialize(ResourceRepository, ProducerRepository, ParticipantRepository)
+            set Updatables += array. Device
+        for(Device:WorkDevices):
+            spawn. Device.Initialize(WorkRepository)
+            set Updatables += array. Device
+
+        # Start Game
+        Updater:updater = updater:
+            Dispatcher := Dispatcher
+            Updatables := Updatables
+
+        spawn. Updater.SetupUpdates()
+        MapSync(Controllers, TriageController)
+
+    TriageController(Controller:controller)<suspends>:void=
+        Controller.Triage()
+
+# # Usage: DeviceArray := GatherWithTag(device_tag{}, device_type)
+# GatherWithTag<public>(Tag:tag, t:type):[]t =
+#     TaggedObjects := GetCreativeObjectsWithTag(Tag)
+#     for(Tagged : TaggedObjects, Casted := t[Tagged]). Casted

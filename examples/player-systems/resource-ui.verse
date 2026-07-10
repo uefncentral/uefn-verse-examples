@@ -1,0 +1,63 @@
+# Resource UI Display
+# Creates a customizable UI widget that displays resource or status information for players. The system uses responsive text blocks with shadows and flexible positioning anchors to show game data in the
+# Difficulty: intermediate  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/resource-ui?ref=github
+
+using { /Fortnite.com/UI }
+using { /Verse.org/Simulation }
+using { /Verse.org/Colors/NamedColors }
+using { /UnrealEngine.com/Temporary/UI }
+using { /UnrealEngine.com/Temporary/SpatialMath }
+
+using { Tableau }
+
+resource_ui<public> := class():
+    VM<public>:gooey_message
+    MinimumAnchor<public>:vector2 = vector2{X:=0.025,Y:=0.75}
+    MaximumAnchor<public>:vector2 = vector2{X:=0.025,Y:=0.75}
+
+    AddForPlayer<public>(Player:player):void=
+        TextBlock := text_block:
+            DefaultTextColor := White
+            DefaultShadowOffset := option. vector2{X:=2.5,Y:=2.5}
+            DefaultShadowColor := Black
+        TextBlock.SetShadowOpacity(1.0)
+        ResourceText := responsive_text_block:
+            GooeyText := VM
+            TextBlock := TextBlock
+
+        if (PlayerUI := GetPlayerUI[Player]):
+            Canvas := MakeCanvas(ResourceText.TextBlock)
+            PlayerUI.AddWidget(Canvas)
+
+        spawn. ResourceText.Initialize()
+
+    MakeCanvas(Widget:widget):canvas=
+        canvas:
+            Slots := array:
+                canvas_slot:
+                    Anchors := anchors{Minimum:=MinimumAnchor,Maximum:=MaximumAnchor}
+                    Offsets := margin{}
+                    Alignment := vector2{X:=0.0,Y:=1.0}
+                    SizeToContent := true
+                    Widget := stack_box:
+                        Orientation := orientation.Vertical
+                        Slots := array:
+                            stack_box_slot:
+                                HorizontalAlignment := horizontal_alignment.Left
+                                VerticalAlignment := vertical_alignment.Fill
+                                Widget := overlay:
+                                    Slots := array:
+                                        overlay_slot:
+                                            Widget := stack_box:
+                                                Orientation := orientation.Horizontal
+                                                Slots := array:
+                                                    stack_box_slot:
+                                                        Widget := Widget
+                                                        Padding := margin{Left:=20.0}
+                                                        HorizontalAlignment := horizontal_alignment.Fill
+                                                        VerticalAlignment := vertical_alignment.Center
+                                            Padding := margin{Left:=30.0,Right:=30.0}
+                                            HorizontalAlignment := horizontal_alignment.Center
+                                            VerticalAlignment := vertical_alignment.Center

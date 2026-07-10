@@ -1,0 +1,108 @@
+# Resource Producer System
+# A comprehensive resource management system that defines producers (buildings/units) that generate resources over time. Each producer has configurable properties like production rates, costs, upgrade p
+# Difficulty: intermediate  |  UEFN: Verse 1
+# ✅ Verified against Epic's official Verse digest by UEFN Central.
+# Full guide + one-click generate: https://uefncentral.com/library/producer-1?ref=github
+
+using { /Verse.org/Simulation }
+
+using { Tableau }
+
+cost<public> := class<concrete>:
+    @editable Amount:num = num{}
+    @editable Type:int = 0
+
+CopyProducer<constructor><public>(Old:producer)<transacts> := producer:
+    ID := Old.ID
+    Name := Old.Name
+    Production := Old.Production
+    MaxCount := Old.MaxCount
+    ResourceID := Old.ResourceID
+    Cost := Old.Cost
+    CostGrowth := Old.CostGrowth
+    FirstIsFree := Old.FirstIsFree
+    Required := Old.Required
+    DefaultRate := Old.DefaultRate
+    Counts := Old.Counts
+    Abilities := Old.Abilities
+
+producer_int_lenses := enum:
+    ID
+    # MaxCount
+    AllOwners
+    Target
+    ResourceID
+    # OwnerCount
+    # Counts
+
+producer_num_lenses := enum:
+    # Production
+    ProductionAmount
+
+producer_ability<public> := class<concrete>:
+    @editable Subjects:producer_int_lenses = producer_int_lenses.Target
+    @editable Targets:producer_int_lenses = producer_int_lenses.ResourceID
+    @editable Magnitudes:producer_num_lenses = producer_num_lenses.ProductionAmount
+    @editable AfterEffects:[]effect_type = array. effect_type.AddResources
+
+# TODO: Initialize all counts to not be higher than the MaxCount
+# TODO: HasAny function to check if a participant has any of this producer
+producer<public> := class<concrete>():
+    @editable ID<public>:int = 0
+    @editable Name<public>:string = "Producer"
+    @editable Production<public>:num = num. Value := 1.67
+    @editable MaxCount<public>:int = 1
+    @editable ResourceID<public>:?int = false
+    @editable Cost<public>:?cost = false
+    @editable CostGrowth<public>:float = 1.07
+    @editable FirstIsFree<public>:logic = false
+    @editable Required<public>:?[]int = false
+    @editable DefaultRate<public>:float = 1.0
+    Counts<public>:[int]int = map{}
+    Rates<public>:[int]float = map{}
+    CommandMaker<public>:?command_maker = false
+    @editable Abilities<public>:[]producer_ability = array{}
+
+    HasCost<public>()<decides><transacts>:cost = Cost?
+    GetCost<public>(ParticipantID:int)<decides><transacts>:cost =
+        BaseCost := HasCost[]
+        if (FirstIsFree? and GetCount(ParticipantID) = 0):
+            cost:
+                Amount := num{}
+                Type := BaseCost.Type
+        else:
+            cost:
+                Amount := BaseCost.Amount * Pow(CostGrowth, GetCount(ParticipantID) * 1.0)
+                Type := BaseCost.Type
+    GetCount<public>(ParticipantID:int)<computes>:int = Counts[ParticipantID] or 0
+    GetRate<public>(ParticipantID:int)<computes>:float = Rates[ParticipantID] or DefaultRate
+    IsMaxed<public>(ParticipantID:int)<decides><transacts>:void = GetCount(ParticipantID) >= MaxCount
+
+    GetProductionAmount<public>(ParticipantID:int):num=
+        Count := GetCount(ParticipantID)
+        if (Count = 0). return num{}
+        Production * Count
+
+    IncreaseCount<public>(ParticipantID:int)<decides><transacts>:producer=
+        if(IsMaxed[ParticipantID]). false?
+
+        var NewCounts:[int]int = Self.Counts
+        if (set NewCounts[ParticipantID] = NewCounts[ParticipantID] + 1 or 1) {}
+
+        return producer:
+            CopyProducer<constructor>(Self)
+            Counts := NewCounts
+
+    OwnedBy<public>(ParticipantID:int)<decides><transacts>:int=
+        GetCount(ParticipantID) > 0
+
+ToString<public>(Prod:producer):string=
+    var Result:string = "\n"
+    set Result += "  Producer #{Prod.ID}:\n"
+    set Result += "\t- Max Count: {Prod.MaxCount}\n"
+    set Result += "\t- Production Amount: {Prod.Production}\n"
+    set Result += "\t- Counts ({Prod.Counts.Length}):\n"
+
+    for (ID->Count:Prod.Counts). set Result += "\t\t{ID} -> {Count}\n"
+
+    return Result
