@@ -1,8 +1,11 @@
-# UEFN Verse Examples — 831+ compiler-verified snippets for Fortnite Creative
+# UEFN Verse Examples — 395 compiler-verified, copy-paste-ready Verse files for Fortnite Creative
 
 The largest open collection of **working Verse code** for **Unreal Editor for Fortnite (UEFN)** — every example **validated against Epic's official Verse API digest**, so it uses real, documented functions instead of the hallucinated APIs generic AI tools produce.
 
 > Maintained by [**UEFN Central**](https://uefncentral.com?ref=github) — an AI Verse generator + error fixer built for Fortnite Creative. Every snippet here is original / cleared for open use (third-party-attributed submissions are excluded).
+
+**🔨 Build status: every file in [`/examples`]( ./examples/ ) was compiled in a real UEFN Verse build on July 11, 2026 — 395/395 pass.** A further 400 digest-validated reference fragments (parts of larger projects, not standalone) live in [`/snippets`](./snippets/).
+
 
 ## 📚 Browse by category
 
