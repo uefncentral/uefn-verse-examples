@@ -7,6 +7,15 @@ The largest open collection of **working Verse code** for **Unreal Editor for Fo
 **🔨 Build status: every file in [`/examples`]( ./examples/ ) was compiled in a real UEFN Verse build on July 11, 2026 — 395/395 pass.** A further 400 digest-validated reference fragments (parts of larger projects, not standalone) live in [`/snippets`](./snippets/).
 
 
+## 💬 What creators say
+
+> "Every Verse file it generated during my trial worked straight away and matched what I asked for. When I wanted to make changes it rewrote my existing code with the new features already integrated." — **@forbidden077**, July 2026
+
+> "The AI Verse coder he built is honestly amazing. It doesn't just generate code, it actually helps." — **@flyingpig1411**, March 2026
+
+Real, unedited reviews from our [community Discord](https://discord.gg/Nf7vcv7ewe) #reviews channel.
+
+
 ## 📚 Browse by category
 
 | Category | Examples |
